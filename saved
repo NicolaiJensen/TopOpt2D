@@ -1,0 +1,73 @@
+for (PetscInt i=0;i<nn;i++){
+            
+            PetscInt j = 2*i;
+            PetscInt ii;
+              
+            Indy0 = floor((lcoorp[j+1])/dy);
+            Indx0 = floor((lcoorp[j])/dx);
+            NodeID0 = Indy0*(nxyz[0]-1)+Indx0;
+            ii = NodeID0;
+            IndexMapMTP[ii] = gidx[i];
+            IndexMapPTM[gidx[i]] = ii;
+
+        }
+
+        // gather global dofs in array and divide with IndexMaxCOUNT
+            PetscInt *tmp= new PetscInt[Gsize];
+            
+            memset(tmp,0, sizeof(tmp[0])*Gsize);
+            
+            MPI_Allreduce(IndexMapMTP,tmp,Gsize,MPIU_INT, MPI_MAX,PETSC_COMM_WORLD );
+            memcpy(IndexMapMTP,tmp,sizeof(PetscInt)*Gsize);    
+            
+            memset(tmp,0, sizeof(tmp[0])*Gsize);
+            
+            MPI_Allreduce(IndexMapPTM,tmp,Gsize,MPIU_INT, MPI_MAX,PETSC_COMM_WORLD );
+            memcpy(IndexMapPTM,tmp,sizeof(PetscInt)*Gsize);    
+            
+            delete [] tmp;   
+        
+            
+            // Set up DT matix   
+
+        for (PetscInt i=0;i<nn;i++){
+                
+            // Find node ID's in standard representation
+            NodeID=IndexMapPTM[gidx[i]];
+            PetscInt divx = 2.0;
+            PetscInt divy = 2.0;
+            PetscInt Indx[2];
+            PetscInt Indy[2];
+            PetscInt Indxtemp;
+            PetscInt Indytemp;
+            
+            //Find first index in x
+            Indxtemp = ( NodeID%(nxyz[0]-1) ) % ( (nxyz[0]-1)/divx );
+            if ( Indxtemp == 0 ) {
+                Indxtemp = (nxyz[0]-1)/divx;
+            }  
+            //Set indices in x
+            for (PetscInt ii=0;ii<divx;ii++){
+                Indx[ii] = Indxtemp + ii*(nxyz[0]-1)/divx;
+            }
+            //Find first index in y
+            Indytemp = PetscInt(ceil(NodeID/((nxyz[0]-1)*(nxyz[1]-1)+1)*(nxyz[1]-1)))%(nxyz[1]-1)/divy;
+            if ( Indytemp == 0 ) {
+                Indytemp = (nxyz[1]-1)/divy;
+            } 
+            //Set indices in y
+            for (PetscInt ii=0;ii<divy;ii++){
+                Indy[ii] = Indytemp + ii*(nxyz[1]-1)/divy;
+            }
+            
+            for (PetscInt ii=0;ii<divx;ii++){
+                for (PetscInt ij=0;ij<divy;ij++){
+                        NodeID = Indy[ij]*(nxyz[0]-1) + Indx[ii];
+                        MatSetValue(DT,gidx[i],IndexMapMTP[NodeID],1.0/(divx*divy),INSERT_VALUES);    
+                        MatSetValue(DT,NodeID,gidx[i],1.0,INSERT_VALUES);
+                }
+            }
+        }
+        
+        MatAssemblyBegin(DT,MAT_FINAL_ASSEMBLY);
+        MatAssemblyEnd(DT,MAT_FINAL_ASSEMBLY);
